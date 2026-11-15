@@ -39,35 +39,58 @@ window.__ModuleLoader__.load({
     /**
      * Collapses the sidebar row that contains our marker.
      *
-     * The sidebar renders each panel as `div > button > span(icon)`, and our
-     * marker replaces the icon, so the row is the only `div` with a direct
-     * `button` child that carries the marker. Anchoring on our own node keeps
-     * the rule independent of generated class names and of the row's label.
+     * The sidebar renders each global panel as `div > button > span(icon)` inside
+     * its `<nav>` landmark, and our marker takes the icon's place. `:has()` is
+     * what lets a rule reach the row when the only node we own is the icon slot;
+     * scoping to `nav` keeps it off anything else that might nest a button.
      */
-    const ROW_STYLE = `div:has(> button [${ROW_MARK}]){display:none !important}`
+    const ROW_STYLE = `nav div:has(> button [${ROW_MARK}]){display:none !important}`
 
     /**
-     * The hidden Plugins cell: draws no icon and carries the rule above.
-     * @returns the marker element plus its scoped style.
+     * The replacement occupant for the Plugins cell: draws no icon, and carries
+     * the rule that collapses the row it sits in.
+     *
+     * The `<style>` is part of this component, so React removes it together with
+     * the row when the plugin unloads — nothing is left behind in the page.
+     * @returns the marker element plus its style.
      */
     function HiddenPanelIcon() {
       return h(React.Fragment, null,
-        h('span', { [ROW_MARK]: '', hidden: true }),
-        h('style', null, ROW_STYLE))
+        h('style', { dangerouslySetInnerHTML: { __html: ROW_STYLE } }),
+        h('span', { [ROW_MARK]: '', hidden: true }))
     }
 
     /** Restores one replaced descriptor; used for every patch we install. */
     const restorers = new WeakMap()
 
     /**
+     * Drop the built-in rows from one roster result, or return it unchanged.
+     * @param {object} result - a `RemoteResult` for `agentPresets/list`.
+     * @returns {object} the same result, or a copy without built-in presets.
+     */
+    function withoutBuiltIns(result) {
+      if (result === null || typeof result !== 'object' || result.ok !== true) return result
+      const value = result.value
+      if (value === null || typeof value !== 'object' || !Array.isArray(value.presets)) return result
+      const presets = value.presets.filter((row) => {
+        if (typeof row?.id !== 'string' || !BUILT_IN_PRESETS.has(row.id)) return true
+        return row.name !== undefined
+      })
+      if (presets.length === value.presets.length) return result
+      return { ...result, value: { ...value, presets } }
+    }
+
+    /**
      * Wrap `remote.agentPresets.list` so callers receive the roster without the
      * built-in presets.
      *
-     * `list` is an own accessor property of the namespace service (the gateway
-     * installs one getter per Remote method), so the wrapper replaces that
-     * descriptor instead of assigning: a plain assignment would hit a
-     * getter-only property. The original descriptor is kept and put back on
-     * disposal, which restores the shipped method exactly.
+     * `list` is an own accessor property of the namespace service: the gateway
+     * installs one getter per Remote method, and that getter mints a closure
+     * bound to the accessing context. So the wrapper is an accessor too — it
+     * runs the original getter against the same receiver on every access,
+     * which preserves the gateway's per-caller binding, and only filters the
+     * settled result. Disposal puts the original descriptor back, restoring the
+     * shipped method exactly.
      * @param remote - the Client `ctx.remote` service.
      * @returns a disposer restoring the replaced descriptor.
      */
@@ -78,29 +101,26 @@ window.__ModuleLoader__.load({
       const descriptor = Object.getOwnPropertyDescriptor(namespace, 'list')
       if (descriptor === undefined || typeof descriptor.get !== 'function') return () => {}
 
-      const original = (...args) => descriptor.get.call(namespace)(...args)
-      const wrapped = async (...args) => {
-        const result = await original(...args)
-        if (result === null || typeof result !== 'object' || result.ok !== true) return result
-        const value = result.value
-        if (value === null || typeof value !== 'object' || !Array.isArray(value.presets)) return result
-        const presets = value.presets.filter((row) => {
-          if (typeof row?.id !== 'string' || !BUILT_IN_PRESETS.has(row.id)) return true
-          return row.name !== undefined
-        })
-        if (presets.length === value.presets.length) return result
-        return { ...result, value: { ...value, presets } }
-      }
-
       const dispose = () => {
         restorers.delete(namespace)
-        if (Object.getOwnPropertyDescriptor(namespace, 'list') !== undefined) {
-          Object.defineProperty(namespace, 'list', descriptor)
-        }
+        Object.defineProperty(namespace, 'list', descriptor)
       }
       restorers.set(namespace, dispose)
       Object.defineProperty(namespace, 'list', {
-        configurable: true, enumerable: true, writable: true, value: wrapped,
+        configurable: true,
+        enumerable: true,
+        get() {
+          const call = descriptor.get.call(this)
+          // Call synchronously so a synchronously-throwing Host call still
+          // throws to the caller instead of turning into a rejected promise;
+          // the settled value is what gets filtered.
+          return (...args) => {
+            const pending = call(...args)
+            return pending !== null && typeof pending === 'object' && typeof pending.then === 'function'
+              ? pending.then(withoutBuiltIns)
+              : withoutBuiltIns(pending)
+          }
+        },
       })
       return dispose
     }

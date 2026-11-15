@@ -1,6 +1,6 @@
 {
   "name": "@wjmmyz/dsh-plugin-hide-ui",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Hide the Plugins entry in the DSH sidebar and the built-in agent presets in the preset pickers.",
   "type": "module",
   "license": "MIT",
@@ -36,7 +36,9 @@
     "LICENSE"
   ],
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "immediately": true,
