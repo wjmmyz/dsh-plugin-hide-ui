@@ -1,1 +1,1 @@
-![A sidebar whose plugin row has been removed, beside a preset list showing only custom presets](preview.svg)
+![Left sidebar with the Plugins row removed, beside a preset menu listing only custom presets](preview.svg)

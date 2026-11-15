@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Hide UI entries",
-    "description": "Hides the Plugins entry in the left sidebar and the built-in agent presets in the preset pickers. Custom presets you add yourself stay visible, and sessions already running a built-in preset keep working.",
+    "title": "Hide sidebar Plugins row and built-in presets",
+    "description": "Removes the Plugins row from the left sidebar and hides the built-in agent presets (Standard, PTC, Minimal) from the new-session preset chip, Settings > Agent presets, and the preset roster. Custom presets stay visible. Creator mode is kept by default. To reach the Plugins page afterwards, use the sidebar panel list's More button, then Browse other plugins.",
     "detail": "docs/DETAIL.md"
   }
 }

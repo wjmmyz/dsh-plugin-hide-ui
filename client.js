@@ -1,23 +1,30 @@
 /**
  * Hide UI — browser half.
  *
- * Two independent hiding rules, each owned by a different shipped surface:
+ * Three independent rules, each owned by a different shipped surface. They are
+ * installed in separate `ctx.inject` scopes so one failing surface cannot
+ * cancel the others.
  *
- * 1. The **Plugins** row of the left sidebar. Its row list is derived from the
- *    `sidebar.panellist` slot, and the sidebar deliberately keeps that one
- *    panel fixed: `FIXED_PANEL_ID` bypasses the unpin list and the More menu,
- *    so no UI path removes it. We register into the same `sidebar.panellist`
- *    cell (a re-registration wins the cell), render a marker instead of an
- *    icon, and carry one scoped style rule that collapses the row that
- *    contains the marker. The rule lives inside our own component, so React
- *    removes it with the row and nothing leaks into the page.
+ * 1. The **Plugins** row of the left sidebar. Its row list comes from the
+ *    `sidebar.panellist` slot, and the sidebar deliberately pins that one
+ *    panel: `FIXED_PANEL_ID` bypasses the unpin list and the More menu, so no
+ *    UI path removes it. We register into the same `sidebar.panellist` cell (a
+ *    re-registration wins the cell), render a marker instead of an icon, and
+ *    carry one scoped style rule that collapses the row containing the marker.
+ *    The rule lives inside our own component, so React removes it with the row.
  *
- * 2. The **built-in agent presets** of the new-session chip, the session
- *    header label and Settings → Agent presets. All three read one roster from
+ * 2. The **built-in preset rows** of the new-session chip, Settings → Agent
+ *    presets, and the session-header label. All of them read one roster from
  *    the Host through `remote.agentPresets.list`; wrapping that method for our
- *    lifetime hides the built-in entries everywhere at once, without touching
- *    the Host's declarations, so sessions already running a built-in preset
- *    keep working.
+ *    lifetime hides the built-in entries everywhere at once. The Host keeps its
+ *    own declarations, so sessions already running a built-in preset keep
+ *    working. Two shipped features read the same roster to decide whether
+ *    Creator mode exists — the Settings "create a preset with the agent" entry
+ *    and the Plugins page's "let the agent create a plugin" row — so those IDs
+ *    stay in the roster by default; `keepCreatorEntries` controls that.
+ *
+ * 3. Nothing else. The plugin touches no Host state, writes no storage, and
+ *    requests no network access.
  */
 window.__ModuleLoader__.load({
   id: '@wjmmyz/dsh-plugin-hide-ui',
@@ -33,25 +40,36 @@ window.__ModuleLoader__.load({
      */
     const BUILT_IN_PRESETS = new Set(['standard', 'ptc', 'minimal', 'cordis'])
 
+    /**
+     * IDs the shipped UI reads as "Creator mode is available". Filtering them
+     * out of the roster would disable the Settings creator entry and the
+     * Plugins page's create-plugin row, which is a feature loss rather than the
+     * requested cleanup, so they stay unless config turns that off.
+     */
+    const CREATOR_IDS = new Set(['cordis'])
+
     /** Marks the panel row this plugin hides; the rule below keys on it. */
     const ROW_MARK = 'data-hide-ui-panel-row'
 
     /**
      * Collapses the sidebar row that contains our marker.
      *
-     * The sidebar renders each global panel as `div > button > span(icon)` inside
-     * its `<nav>` landmark, and our marker takes the icon's place. `:has()` is
-     * what lets a rule reach the row when the only node we own is the icon slot;
-     * scoping to `nav` keeps it off anything else that might nest a button.
+     * The sidebar renders its global panels as `<nav> > div > button > span(icon)`,
+     * and our marker takes the icon's place. Two deliberate choices make the
+     * rule survive markup this plugin does not own:
+     *
+     * - `nav > div` pins the row to a direct child of the navigation landmark
+     *   instead of assuming what sits between the row and the button (the
+     *   shipped button is wrapped in a Tooltip, whose own elements may change).
+     * - `:has()` reaches upward from the only node we do own. DSH already styles
+     *   these rows with `:has(:focus-visible)`, so the selector is supported
+     *   wherever the sidebar itself works.
      */
-    const ROW_STYLE = `nav div:has(> button [${ROW_MARK}]){display:none !important}`
+    const ROW_STYLE = `nav > div:has([${ROW_MARK}]){display:none !important}`
 
     /**
      * The replacement occupant for the Plugins cell: draws no icon, and carries
      * the rule that collapses the row it sits in.
-     *
-     * The `<style>` is part of this component, so React removes it together with
-     * the row when the plugin unloads — nothing is left behind in the page.
      * @returns the marker element plus its style.
      */
     function HiddenPanelIcon() {
@@ -60,21 +78,24 @@ window.__ModuleLoader__.load({
         h('span', { [ROW_MARK]: '', hidden: true }))
     }
 
-    /** Restores one replaced descriptor; used for every patch we install. */
+    /** Installers keyed by the namespace they patched, so remounting is idempotent. */
     const restorers = new WeakMap()
 
     /**
      * Drop the built-in rows from one roster result, or return it unchanged.
      * @param {object} result - a `RemoteResult` for `agentPresets/list`.
-     * @returns {object} the same result, or a copy without built-in presets.
+     * @param {boolean} keepCreator - keep the ids the shipped UI reads as Creator mode.
+     * @returns {object} the same result, or a copy without the hidden presets.
      */
-    function withoutBuiltIns(result) {
+    function withoutBuiltIns(result, keepCreator) {
       if (result === null || typeof result !== 'object' || result.ok !== true) return result
       const value = result.value
       if (value === null || typeof value !== 'object' || !Array.isArray(value.presets)) return result
       const presets = value.presets.filter((row) => {
         if (typeof row?.id !== 'string' || !BUILT_IN_PRESETS.has(row.id)) return true
-        return row.name !== undefined
+        // A declaration that names itself is a user override of a built-in id.
+        if (row.name !== undefined) return true
+        return keepCreator && CREATOR_IDS.has(row.id)
       })
       if (presets.length === value.presets.length) return result
       return { ...result, value: { ...value, presets } }
@@ -84,22 +105,28 @@ window.__ModuleLoader__.load({
      * Wrap `remote.agentPresets.list` so callers receive the roster without the
      * built-in presets.
      *
-     * `list` is an own accessor property of the namespace service: the gateway
-     * installs one getter per Remote method, and that getter mints a closure
-     * bound to the accessing context. So the wrapper is an accessor too — it
-     * runs the original getter against the same receiver on every access,
-     * which preserves the gateway's per-caller binding, and only filters the
-     * settled result. Disposal puts the original descriptor back, restoring the
-     * shipped method exactly.
-     * @param remote - the Client `ctx.remote` service.
+     * `list` is an own accessor on the namespace service: the gateway installs
+     * one getter per Remote method, and that getter mints a closure bound to the
+     * accessing context. So the wrapper is an accessor too — it runs the original
+     * getter against the same receiver on every access, preserving the gateway's
+     * per-caller binding, and only filters the settled result. Disposal puts the
+     * original descriptor back, restoring the shipped method exactly.
+     * @param {object} remote - the Client `ctx.remote` service.
+     * @param {boolean} keepCreator - keep the ids the shipped UI reads as Creator mode.
      * @returns a disposer restoring the replaced descriptor.
      */
-    function filterAgentPresets(remote) {
+    function filterAgentPresets(remote, keepCreator) {
       const namespace = remote?.agentPresets
-      if (namespace === undefined) return () => {}
+      if (namespace === undefined) {
+        console.warn('[hide-ui] remote.agentPresets is unavailable; built-in presets stay visible')
+        return () => {}
+      }
       if (restorers.has(namespace)) return restorers.get(namespace)
       const descriptor = Object.getOwnPropertyDescriptor(namespace, 'list')
-      if (descriptor === undefined || typeof descriptor.get !== 'function') return () => {}
+      if (descriptor === undefined || typeof descriptor.get !== 'function') {
+        console.warn('[hide-ui] remote.agentPresets.list is not the expected accessor; built-in presets stay visible')
+        return () => {}
+      }
 
       const dispose = () => {
         restorers.delete(namespace)
@@ -117,8 +144,8 @@ window.__ModuleLoader__.load({
           return (...args) => {
             const pending = call(...args)
             return pending !== null && typeof pending === 'object' && typeof pending.then === 'function'
-              ? pending.then(withoutBuiltIns)
-              : withoutBuiltIns(pending)
+              ? pending.then(value => withoutBuiltIns(value, keepCreator))
+              : withoutBuiltIns(pending, keepCreator)
           }
         },
       })
@@ -126,15 +153,27 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'remote'],
-      apply(ctx) {
+      // Only the sidebar service gates the whole plugin. The preset rule needs
+      // `remote.agentPresets`, which Cordis requires the code to declare before
+      // it may read the property — but declaring it here would tie the sidebar
+      // rule to the preset service, so that rule injects it in its own scope.
+      inject: ['slots'],
+      apply(ctx, config) {
+        const options = config ?? {}
+        const keepCreator = options.keepCreatorEntries !== false
+
+        // Rule 1: independent of every Remote namespace.
         ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
           name: 'sidebar.panellist',
           id: 'plugins',
           order: 0,
         }, HiddenPanelIcon)), 'hide-ui: hide the Plugins sidebar row')
 
-        ctx.effect(() => filterAgentPresets(ctx.remote), 'hide-ui: hide built-in agent presets')
+        // Rule 2: its own scope, so a missing preset service cannot cancel the
+        // sidebar rule and vice versa.
+        ctx.inject(['remote', 'remote.agentPresets'], (scope) => {
+          scope.effect(() => filterAgentPresets(scope.remote, keepCreator), 'hide-ui: hide built-in agent presets')
+        })
       },
     }
   },

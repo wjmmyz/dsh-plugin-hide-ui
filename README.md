@@ -4,40 +4,42 @@ English | [中文](README.zh.md)
 
 A DeepSeek Harness bundle that removes two kinds of clutter from the Web GUI:
 
-- the **Plugins** entry in the left sidebar's global panel list;
-- the **built-in agent presets** (Standard mode, PTC mode, Minimal mode, Creator
-  mode) from the new-session preset chip, the Settings → Agent presets section,
-  and the session header label.
+- the **Plugins** row in the left sidebar's global panel list;
+- the **built-in agent presets** (Standard mode, PTC mode, Minimal mode) from the
+  new-session preset chip, from Settings → Agent presets, and from the preset
+  list those surfaces read.
 
-Custom presets you add yourself stay visible. Sessions that already run a
-built-in preset keep running it — the plugin filters what the pickers offer, it
-does not remove declarations from the Host.
+Custom presets you add yourself stay visible, and a preset declaration that
+reuses a built-in id but publishes its own name is treated as custom — it stays
+too. Sessions that already run a built-in preset keep running it: the plugin
+filters what the pickers offer, it does not remove declarations from the Host.
 
 ## What it changes
 
 | Surface | Effect |
 |---|---|
-| Left sidebar → global panel rows | The Plugins row is gone. The other panel rows, the Workspaces/Sessions browser, New Session and Settings are untouched. |
-| New-session preset chip | Lists only presets that are not built-in. Hidden when no custom preset is left. |
-| Settings → Agent presets | The Built-in group disappears; the Custom group and its Creator entry are unchanged. |
-| Session header preset label | Stops rendering when the session runs a built-in preset. |
+| Left sidebar → global panel rows | The Plugins row is gone. Other panel rows, the Workspaces/Sessions browser, New Session and Settings are untouched. |
+| New-session preset chip | Lists only non-built-in presets. If nothing is left to choose, the chip is not rendered. |
+| Settings → Agent presets | Standard / PTC / Minimal cards disappear from the Built-in group. |
+| Session header preset label | A built-in preset that was filtered out of the roster has no display name left, so the header shows the raw preset id (for example `standard`) instead of its localized name. |
 
-The Plugins page itself is not disabled. Any other entry point continues to
-work, and you can still reach it — for example the More menu lists only
-unpinnable panels, so with this bundle installed the sidebar simply has no
-Plugins row.
+**Creator mode is kept by default.** Two shipped entries decide whether to appear
+by looking for the `cordis` preset in the same roster: the Settings "let the agent
+help me create a preset" button and the Plugins page's "let the agent create a
+plugin" row. Filtering it out would quietly disable both. Set `keepCreatorEntries`
+to `false` in the plugin's configuration if you want Creator mode hidden and
+accept that those two entries disappear with it.
 
-## Why these two mechanisms
+## Getting back to the Plugins page
 
-The Plugins row is the one panel row the sidebar pins unconditionally: it never
-enters the More menu's pin list, so it cannot be unpinned from the UI. This
-bundle registers its own occupant into the same `sidebar.panellist` cell, which
-replaces that row's icon renderer with one that draws nothing.
+This plugin hides the sidebar row that normally opens **Plugins**, so use the
+other route: the sidebar's panel list ends with a **More** button (`…`, the
+add-panel icon). Its menu contains **Browse other plugins**, which opens the
+Plugins page. That is where you enable or disable bundles, including this one.
 
-The preset roster is served to the browser by `remote.agentPresets.list()`.
-Every preset surface reads it through one shared helper, so wrapping that method
-while the plugin is enabled hides the built-in entries everywhere at once,
-without a reload and without touching the Host's declarations.
+On a narrow window the sidebar is a drawer; open it from the header's sidebar
+button first. With the sidebar fully hidden (macOS desktop), use the sidebar
+button beside the window controls.
 
 ## Install
 
@@ -51,20 +53,44 @@ Or, in the Web GUI, open **Plugins** → **Add plugin** and give the package nam
 or a local directory. Restart the app once so the browser bundle is loaded, then
 open a new session.
 
+## Configuration
+
+| Field | Default | Meaning |
+|---|---|---|
+| `keepCreatorEntries` | `true` | Keep the Creator mode preset in the roster so the Settings creator entry and the Plugins page create-plugin row keep working. |
+
 ## Disable
 
-Turn the bundle off in **Plugins**, or remove it. Both hiding rules are
-registered as plugin effects, so disabling restores the shipped behavior; no
-Host restart and no clearing of stored state is needed.
+Turn the bundle off in **Plugins** (reach it through **More** → **Browse other
+plugins**, as described above), or remove it. Every hiding rule is registered as a
+plugin effect, so disabling restores the shipped behavior; no Host restart and no
+clearing of stored state is needed. Reload the page once so the browser half is
+torn down.
+
+## How it works
+
+The Plugins row is the one global panel the sidebar pins unconditionally — it
+never enters the More menu's pin list, so it cannot be unpinned from the UI. This
+bundle registers its own occupant into the same `sidebar.panellist` cell, which
+replaces that row's icon renderer, and ships one scoped rule that collapses the
+row containing its marker.
+
+The preset roster reaches the browser through `remote.agentPresets.list()`, and
+every preset surface reads it through the same helper. The plugin replaces that
+method's accessor for its own lifetime, so all surfaces see the filtered roster at
+once without a reload and without touching the Host's declarations.
 
 ## Limitations
 
-- The sidebar rule is keyed to the shipped panel id `plugins`. If a future DSH
-  release renames that panel, the row reappears until this bundle is updated.
+- The sidebar rule anchors on the shipped panel id `plugins` and on the sidebar's
+  `<nav>` landmark. A future DSH release that renames either makes the row
+  reappear; the preset rule is unaffected.
 - A preset counts as built-in when its id is `standard`, `ptc`, `minimal` or
   `cordis` **and** the declaration publishes no name. That is how the shipped
-  packages mark their own presets; a user declaration that reuses one of those
-  ids and names itself is treated as custom and stays visible.
+  packages mark their own presets.
+- A session already running a filtered-out preset keeps working, but its header
+  label falls back to the raw id and Settings can no longer offer it as the
+  default; choose a custom preset as the default instead.
 - The plugin only affects the browser UI. `dsh --dump-config`, the CLI, and
   sessions started by other means are unaffected.
 
