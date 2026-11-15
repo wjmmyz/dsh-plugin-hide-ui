@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Hide UI entries",
+    "description": "Hides the Plugins entry in the left sidebar and the built-in agent presets in the preset pickers. Custom presets you add yourself stay visible, and sessions already running a built-in preset keep working.",
+    "detail": "docs/DETAIL.md"
+  }
+}

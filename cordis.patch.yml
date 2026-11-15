@@ -1,0 +1,3 @@
+- insert:
+    - id: hide-ui
+      name: '@wjmmyz/dsh-plugin-hide-ui'
