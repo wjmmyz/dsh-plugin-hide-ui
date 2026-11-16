@@ -23,12 +23,13 @@ filters what the pickers offer, it does not remove declarations from the Host.
 | Settings → Agent presets | Standard / PTC / Minimal cards disappear from the Built-in group. |
 | Session header preset label | A built-in preset that was filtered out of the roster has no display name left, so the header shows the raw preset id (for example `standard`) instead of its localized name. |
 
-**Creator mode is kept by default.** Two shipped entries decide whether to appear
-by looking for the `cordis` preset in the same roster: the Settings "let the agent
+**Creator mode is hidden by default too.** It is one of the built-in presets, so it
+disappears with the others. Two shipped entries decide whether to appear by
+looking for the `cordis` preset in the same roster: the Settings "let the agent
 help me create a preset" button and the Plugins page's "let the agent create a
-plugin" row. Filtering it out would quietly disable both. Set `keepCreatorEntries`
-to `false` in the plugin's configuration if you want Creator mode hidden and
-accept that those two entries disappear with it.
+plugin" row. Hiding Creator mode disables both. Set `keepCreatorEntries` to
+`true` in the plugin's configuration to bring Creator mode — and those two
+entries — back while keeping the other built-in presets hidden.
 
 ## Getting back to the Plugins page
 
@@ -57,7 +58,7 @@ open a new session.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `keepCreatorEntries` | `true` | Keep the Creator mode preset in the roster so the Settings creator entry and the Plugins page create-plugin row keep working. |
+| `keepCreatorEntries` | `false` | Keep the Creator mode preset in the roster. Turn it on to use the Settings creator entry and the Plugins page create-plugin row, which are shown only while Creator mode is present. |
 
 ## Disable
 

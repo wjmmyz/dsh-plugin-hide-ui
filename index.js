@@ -19,12 +19,12 @@ export const Config = {
   properties: {
     keepCreatorEntries: {
       type: 'boolean',
-      default: true,
-      title: 'Keep Creator mode entries',
+      default: false,
+      title: 'Keep Creator mode',
       description:
-        'Keep the Creator mode preset in the roster. The Settings "let the agent help me create a preset" entry '
-        + 'and the Plugins page "let the agent create a plugin" row are shown only while it is present. '
-        + 'Turn this off to hide Creator mode as well; those two entries then disappear.',
+        'Built-in presets are hidden by default, which includes Creator mode. Turn this on to keep it in the roster; '
+        + 'the Settings "let the agent help me create a preset" entry and the Plugins page "let the agent create a plugin" '
+        + 'row are shown only while Creator mode is present.',
     },
   },
   additionalProperties: false,

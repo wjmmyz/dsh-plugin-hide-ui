@@ -160,7 +160,10 @@ window.__ModuleLoader__.load({
       inject: ['slots'],
       apply(ctx, config) {
         const options = config ?? {}
-        const keepCreator = options.keepCreatorEntries !== false
+        // Creator mode is hidden by default: it is one of the built-in presets.
+        // Opting back in keeps it in the roster, which is what the shipped
+        // Settings creator entry and the Plugins page create-plugin row read.
+        const keepCreator = options.keepCreatorEntries === true
 
         // Rule 1: independent of every Remote namespace.
         ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
